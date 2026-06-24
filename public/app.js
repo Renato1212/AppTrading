@@ -107,7 +107,26 @@ function render(data) {
   }
 
   if (!data.events.length) {
-    board.innerHTML = `<div class="empty">No trending market-moving news right now. Scanning…</div>`;
+    // Distinguish "never scanned" (needs setup) from "scanned, nothing trending".
+    if (!data.last_scan_ts || !data.scan_count) {
+      board.innerHTML = `<div class="empty setup">
+        <h2>No data yet — finish the live setup</h2>
+        <ol>
+          <li>Add a <b>KV store</b> in your Vercel project (Storage → Vercel KV / Upstash) so scans can be saved, then redeploy.</li>
+          <li>Run a first scan: <button id="kick">⚡ Scan now</button> &nbsp;or open <code>/api/scan</code>.</li>
+          <li>The daily Vercel Cron keeps it fresh after that (or ping <code>/api/scan</code> every couple of minutes for real-time).</li>
+        </ol>
+        <p class="muted">Until a KV store is connected the board can't persist between requests, so it stays empty.</p>
+      </div>`;
+      const kick = document.getElementById("kick");
+      if (kick) kick.addEventListener("click", async () => {
+        kick.textContent = "scanning…"; kick.disabled = true;
+        try { await fetch("/api/scan", { method: "POST" }); } catch (e) {}
+        load();
+      });
+      return;
+    }
+    board.innerHTML = `<div class="empty">Scanned, but nothing is trending right now. The board updates automatically.</div>`;
     return;
   }
   board.innerHTML = data.events.map(card).join("");

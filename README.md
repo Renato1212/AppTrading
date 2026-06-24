@@ -121,6 +121,22 @@ keeps working across scans).
 Everything is stdlib + FastAPI + httpx — no numpy/scipy/sklearn — so the
 function bundle stays small and cold-starts fast.
 
+### Go-live checklist (why the board looks empty)
+
+A successful deploy is not enough to see data — two more things matter:
+
+- [ ] **Connect a KV store** (above). Without it the function has nowhere to
+      persist scans, so the board stays empty no matter how many times it runs.
+- [ ] **Run the first scan** — open `/api/scan` once (or click *Scan now* on the
+      empty-state screen). The board populates and the cron keeps it updated.
+- [ ] **To view the dashboard**, either open the deployment **while logged into
+      your Vercel account**, or turn off **Settings → Deployment Protection →
+      Vercel Authentication** so the URL is publicly viewable. (A protected
+      deployment returns `403` to anonymous visitors — that's Vercel, not a bug.)
+
+If the board has never been scanned it shows these steps inline instead of a
+blank screen.
+
 ---
 
 ## Web API
