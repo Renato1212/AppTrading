@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 
 from fastapi import FastAPI, Header, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .engine import read_board, run_scan
@@ -20,7 +20,10 @@ from .sources import INSTRUMENTS, SOURCES
 from .store import Store
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-STATIC_DIR = BASE_DIR / "static"
+# Dashboard assets live in public/. On Vercel these are served directly from the
+# CDN (zero-config static output); locally the app serves them itself so a plain
+# `uvicorn app:app` still works without any static host.
+PUBLIC_DIR = BASE_DIR / "public"
 
 
 def _event_json(ev: Event) -> dict:
@@ -140,11 +143,10 @@ def create_app(store: Store, demo: bool = False, min_score: float = 1.0) -> Fast
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         return await _do_scan()
 
-    if STATIC_DIR.is_dir():
-        app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-    @app.get("/")
-    def index():
-        return FileResponse(str(STATIC_DIR / "index.html"))
+    # Serve the dashboard + assets for local dev. Mounted last so the API routes
+    # above take precedence; html=True makes "/" return index.html. On Vercel
+    # this is dormant — the CDN serves public/ and only /api/* reaches here.
+    if PUBLIC_DIR.is_dir():
+        app.mount("/", StaticFiles(directory=str(PUBLIC_DIR), html=True), name="public")
 
     return app

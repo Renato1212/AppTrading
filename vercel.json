@@ -1,12 +1,15 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": null,
+  "outputDirectory": "public",
   "functions": {
     "api/index.py": {
-      "includeFiles": "{static/**,scanner/**}"
+      "includeFiles": "scanner/**"
     }
   },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index" }
+    { "source": "/api/(.*)", "destination": "/api/index" }
   ],
   "crons": [
     { "path": "/api/scan", "schedule": "0 0 * * *" }
