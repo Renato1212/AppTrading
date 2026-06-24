@@ -91,11 +91,19 @@ keeps working across scans).
    which Vercel Cron sends automatically.
 3. **Deploy.** `vercel.json` wires it up:
    - all routes → the `api/index.py` ASGI app,
-   - a cron hitting `/api/scan` every 2 minutes.
+   - a cron hitting `/api/scan`.
 
-   > Sub-daily cron schedules require a Vercel **Pro** plan. On Hobby, crons run
-   > at most once/day — trigger `/api/scan` from an external uptime pinger
-   > (e.g. cron-job.org) instead, passing the `Authorization` header.
+   > **Cron cadence & plans.** The committed schedule is `0 0 * * *` (once a
+   > day) because **Vercel Hobby only allows daily crons**. A once-a-day scan
+   > isn't really "real-time", so for live cadence either:
+   > - **upgrade to Pro** and change the schedule to e.g. `*/2 * * * *`
+   >   (every 2 min) in `vercel.json`, or
+   > - keep Hobby and trigger `/api/scan` from an external uptime pinger
+   >   (e.g. cron-job.org) every minute or two, sending the
+   >   `Authorization: Bearer <CRON_SECRET>` header.
+   >
+   > The scan endpoint itself works at any frequency — only Vercel's *own* cron
+   > scheduler is plan-limited.
 
 Everything is stdlib + FastAPI + httpx — no numpy/scipy/sklearn — so the
 function bundle stays small and cold-starts fast.

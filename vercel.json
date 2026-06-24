@@ -11,6 +11,6 @@
     { "source": "/(.*)", "destination": "/api/index" }
   ],
   "crons": [
-    { "path": "/api/scan", "schedule": "*/2 * * * *" }
+    { "path": "/api/scan", "schedule": "0 0 * * *" }
   ]
 }
