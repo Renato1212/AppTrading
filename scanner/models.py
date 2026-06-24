@@ -30,6 +30,33 @@ class Article:
     def text(self) -> str:
         return f"{self.title}. {self.summary}".strip()
 
+    def to_dict(self) -> dict:
+        return {
+            "title": self.title,
+            "summary": self.summary,
+            "link": self.link,
+            "outlet": self.outlet,
+            "feed_name": self.feed_name,
+            "tier": self.tier,
+            "published_ts": self.published_ts,
+            "fetched_ts": self.fetched_ts,
+            "views": self.views,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Article":
+        return cls(
+            title=d["title"],
+            summary=d.get("summary", ""),
+            link=d["link"],
+            outlet=d["outlet"],
+            feed_name=d.get("feed_name", ""),
+            tier=d.get("tier", 2),
+            published_ts=d.get("published_ts", 0.0),
+            fetched_ts=d.get("fetched_ts", 0.0),
+            views=d.get("views"),
+        )
+
 
 @dataclass
 class Event:
@@ -75,3 +102,25 @@ class Event:
     def max_tier_rank(self) -> int:
         """Best (lowest-number) tier covering the story; 1 = wire."""
         return min((a.tier for a in self.articles), default=3)
+
+    def to_dict(self) -> dict:
+        """Persistable form (computed score fields are recomputed on read)."""
+        return {
+            "event_id": self.event_id,
+            "headline": self.headline,
+            "first_seen_ts": self.first_seen_ts,
+            "last_update_ts": self.last_update_ts,
+            "outlet_history": [list(p) for p in self.outlet_history],
+            "articles": [a.to_dict() for a in self.articles],
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Event":
+        return cls(
+            event_id=d["event_id"],
+            headline=d["headline"],
+            articles=[Article.from_dict(a) for a in d.get("articles", [])],
+            first_seen_ts=d.get("first_seen_ts", 0.0),
+            last_update_ts=d.get("last_update_ts", 0.0),
+            outlet_history=[tuple(p) for p in d.get("outlet_history", [])],
+        )

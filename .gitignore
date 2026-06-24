@@ -9,3 +9,6 @@ env/
 .pytest_cache/
 .DS_Store
 *.log
+.scanner_state.json
+scanner_state.json
+.vercel

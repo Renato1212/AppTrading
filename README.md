@@ -47,19 +47,22 @@ this" instead of seeing six unrelated headlines.
 
 ---
 
-## Quick start
+## Quick start (local)
 
 ```bash
 pip install -r requirements.txt
 
-# Terminal board (continuous):
-python run.py                 # live feeds, scans every 60s
+# Terminal board:
 python run.py --once          # single pass, print board, exit
+python run.py                 # continuous, scans every 60s
 python run.py --demo          # synthetic feeds, no network needed
 
 # Web dashboard + JSON API:
 uvicorn app:app --reload      # then open http://localhost:8000
 ```
+
+The local server runs the same app as the Vercel deployment, but with a local
+file-backed store and an in-process background scan loop.
 
 ### Demo mode (no network)
 
@@ -70,6 +73,32 @@ you can see the full pipeline and dashboard working:
 python run.py --once --demo
 SCANNER_DEMO=1 uvicorn app:app          # dashboard with sample data
 ```
+
+## Deploy to Vercel
+
+The app is Vercel-native: a serverless ASGI function serves the dashboard/API,
+**Vercel Cron** runs the scan on a schedule, and a **Redis KV** store keeps the
+event set and outlet-history alive between stateless invocations (so velocity
+keeps working across scans).
+
+1. **Add a KV store** — in the Vercel dashboard add *Vercel KV* (or the Upstash
+   Redis integration) to the project. This sets the env vars the app reads:
+   `KV_REST_API_URL` / `KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL` /
+   `UPSTASH_REDIS_REST_TOKEN`). Without them the app falls back to ephemeral
+   `/tmp` storage, which won't persist on serverless.
+2. **(Recommended) set `CRON_SECRET`** — any random string. The `GET /api/scan`
+   cron endpoint then rejects requests without `Authorization: Bearer <secret>`,
+   which Vercel Cron sends automatically.
+3. **Deploy.** `vercel.json` wires it up:
+   - all routes → the `api/index.py` ASGI app,
+   - a cron hitting `/api/scan` every 2 minutes.
+
+   > Sub-daily cron schedules require a Vercel **Pro** plan. On Hobby, crons run
+   > at most once/day — trigger `/api/scan` from an external uptime pinger
+   > (e.g. cron-job.org) instead, passing the `Authorization` header.
+
+Everything is stdlib + FastAPI + httpx — no numpy/scipy/sklearn — so the
+function bundle stays small and cold-starts fast.
 
 ---
 
@@ -103,24 +132,34 @@ attention, impact, recency, outlet count, views, pickup rate) so you can see
 fetch (async, many RSS/Atom feeds)        scanner/fetcher.py + feedparse.py
    │   one Article per outlet pickup       scanner/sources.py   (the outlet list)
    ▼
-cluster (TF-IDF cosine + entity overlap)  scanner/clustering.py + entities.py
-   │   same story across outlets → Event   scanner/models.py
+cluster (TF-IDF cosine + entity overlap)  scanner/clustering.py + textsim.py
+   │   same story across outlets → Event   scanner/entities.py + models.py
    ▼
 score (breadth·velocity·attention·impact·recency)   scanner/scoring.py
    │
    ▼
-serve (ranked board, filters, history)    scanner/scanner.py → app.py + static/
+persist  (Redis KV / local file)          scanner/store.py + engine.py
+   │
+   ▼
+serve (ranked board, filters)             scanner/webapp.py → app.py / api/index.py
 ```
 
 - **`scanner/sources.py`** — outlet feeds (tiered) and the futures-instrument +
   market-impact keyword maps. Add or remove outlets here.
 - **`scanner/scoring.py`** — all scoring weights and the normalisation/decay
   curves live here and are easy to tune.
+- **`scanner/textsim.py`** — the dependency-free TF-IDF cosine used for
+  clustering (replaces scikit-learn).
+- **`scanner/store.py` / `engine.py`** — state persistence and the stateless
+  scan/read cycle the serverless functions use.
+- **`scanner/webapp.py`** — shared FastAPI factory used by both the local server
+  (`app.py`) and the Vercel function (`api/index.py`).
 
 Run the offline tests:
 
 ```bash
 PYTHONPATH=. python tests/test_pipeline.py
+PYTHONPATH=. python tests/test_engine.py
 ```
 
 ---

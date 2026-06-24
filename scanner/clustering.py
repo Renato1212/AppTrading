@@ -4,20 +4,17 @@ The same market-moving story (e.g. a hot CPI print) gets published by many
 outlets within minutes. To measure *how many outlets* are covering an event we
 first have to recognise that those separate articles are the same story. We do
 this with TF-IDF vectors over the headline+summary and greedy cosine-similarity
-clustering against running events.
+clustering against running events, blended with shared market-entity overlap.
 """
 
 from __future__ import annotations
 
-import re
 import time
 import uuid
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-
 from .entities import entity_overlap, extract_entities
 from .models import Article, Event
+from .textsim import build_tfidf, cosine, tokenize
 
 # Combined similarity blends lexical (TF-IDF cosine) and domain (shared market
 # entities) signals. Outlets phrase the same story very differently, so the
@@ -26,12 +23,6 @@ from .models import Article, Event
 SIMILARITY_THRESHOLD = 0.32
 W_COSINE = 0.45
 W_ENTITY = 0.55
-
-_WORD_RE = re.compile(r"[a-z0-9$%]+")
-
-
-def _normalize(text: str) -> str:
-    return " ".join(_WORD_RE.findall(text.lower()))
 
 
 class EventClusterer:
@@ -64,35 +55,25 @@ class EventClusterer:
         # Build a TF-IDF space over existing event headlines + the new articles
         # so we can match new articles to running events (and to each other).
         event_ids = list(self.events.keys())
-        event_docs = [_normalize(self.events[eid].headline) for eid in event_ids]
         event_entities = [self._event_entities(self.events[eid]) for eid in event_ids]
-        new_docs = [_normalize(a.text) for a in new_articles]
         new_entities = [extract_entities(a.text) for a in new_articles]
 
-        corpus = event_docs + new_docs
-        vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2), min_df=1, sublinear_tf=True)
-        try:
-            matrix = vectorizer.fit_transform(corpus)
-        except ValueError:
-            # corpus had only stop words; fall back to entity-only matching
-            matrix = None
+        event_tokens = [tokenize(self.events[eid].headline) for eid in event_ids]
+        new_tokens = [tokenize(a.text) for a in new_articles]
+        vectors = build_tfidf(event_tokens + new_tokens)
 
-        n_events = len(event_docs)
-        # event_id (or "new:<j>") each placed new article landed in, for in-batch matching
+        n_events = len(event_ids)
+        event_vecs = vectors[:n_events]
+        new_vecs = vectors[n_events:]
+        # which event each placed new article landed in, for in-batch matching
         placed_event_of_new: dict[int, str] = {}
 
         for i, art in enumerate(new_articles):
-            row = n_events + i
             best_id, best_sim = None, 0.0
-
-            def cosine(a_row: int, b_row: int) -> float:
-                if matrix is None:
-                    return 0.0
-                return float(cosine_similarity(matrix[a_row], matrix[b_row]).ravel()[0])
 
             # compare against existing events
             for k, eid in enumerate(event_ids):
-                cos = cosine(row, k)
+                cos = cosine(new_vecs[i], event_vecs[k])
                 ent = entity_overlap(new_entities[i], event_entities[k])
                 combined = W_COSINE * cos + W_ENTITY * ent
                 if combined >= self.threshold and combined > best_sim:
@@ -103,7 +84,7 @@ class EventClusterer:
                 eid = placed_event_of_new.get(j)
                 if eid is None:
                     continue
-                cos = cosine(row, n_events + j)
+                cos = cosine(new_vecs[i], new_vecs[j])
                 ent = entity_overlap(new_entities[i], new_entities[j])
                 combined = W_COSINE * cos + W_ENTITY * ent
                 if combined >= self.threshold and combined > best_sim:
@@ -158,3 +139,21 @@ class EventClusterer:
             # keep history bounded
             if len(ev.outlet_history) > 200:
                 ev.outlet_history = ev.outlet_history[-200:]
+
+    # --- persistence -----------------------------------------------------
+    def to_state(self) -> dict:
+        """Serialise the running event set for storage between invocations."""
+        return {"events": [ev.to_dict() for ev in self.events.values()]}
+
+    @classmethod
+    def from_state(cls, state: dict | None) -> "EventClusterer":
+        """Rebuild a clusterer from previously stored state."""
+        clusterer = cls()
+        if not state:
+            return clusterer
+        for ev_dict in state.get("events", []):
+            ev = Event.from_dict(ev_dict)
+            clusterer.events[ev.event_id] = ev
+            for art in ev.articles:
+                clusterer._seen_uids.add(art.uid)
+        return clusterer
