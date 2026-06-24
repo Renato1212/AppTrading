@@ -2,9 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "api/index.py": {
-      "includeFiles": "{static/**,scanner/**}",
-      "memory": 512,
-      "maxDuration": 60
+      "includeFiles": "{static/**,scanner/**}"
     }
   },
   "rewrites": [
