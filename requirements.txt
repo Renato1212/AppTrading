@@ -1,0 +1,6 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+httpx>=0.27
+# RSS/Atom parsing (scanner/feedparse.py) and TF-IDF cosine clustering
+# (scanner/textsim.py) are implemented with the standard library — no
+# third-party feed or ML dependencies, which keeps the serverless bundle small.

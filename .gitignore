@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+.env
+*.egg-info/
+.pytest_cache/
+.DS_Store
+*.log
+.scanner_state.json
+scanner_state.json
+.vercel
