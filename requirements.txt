@@ -1,0 +1,6 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+httpx>=0.27
+scikit-learn>=1.3
+# RSS/Atom parsing is done with the stdlib (scanner/feedparse.py) — no
+# third-party feed library required.

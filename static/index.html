@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Futures News Scanner — Trending Market-Moving News</title>
+<link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="dot"></span>
+    <h1>Futures News Scanner</h1>
+    <span class="tagline">real-time trending market-moving news</span>
+  </div>
+  <div class="status">
+    <div class="stat"><span id="stat-events">–</span><label>events</label></div>
+    <div class="stat"><span id="stat-outlets">–</span><label>outlets live</label></div>
+    <div class="stat"><span id="stat-scan">–</span><label>last scan</label></div>
+    <button id="refresh">⟳ Scan now</button>
+  </div>
+</header>
+
+<nav id="filters">
+  <button class="chip active" data-asset="">All</button>
+  <button class="chip" data-asset="Equity Index">Equity Index</button>
+  <button class="chip" data-asset="Energy">Energy</button>
+  <button class="chip" data-asset="Metals">Metals</button>
+  <button class="chip" data-asset="Rates">Rates</button>
+  <button class="chip" data-asset="FX">FX</button>
+  <button class="chip" data-asset="Agriculture">Agriculture</button>
+  <button class="chip" data-asset="Crypto">Crypto</button>
+</nav>
+
+<main id="board">
+  <div class="empty">Loading the wire…</div>
+</main>
+
+<footer>
+  Score = breadth (outlets) · velocity (pickup rate) · attention (views proxy) · market impact · recency.
+  Auto-refreshes every 15s.
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
