@@ -1,15 +1,23 @@
 """Compute the real-time trending / attention score for each news event.
 
 The score answers: *how much market-moving attention is this story getting,
-right now?* It blends five measurable signals:
+right now — and is the market actually reacting?* It blends measurable signals:
 
-  1. Breadth   - how many distinct outlets are publishing it (tier-weighted).
-  2. Velocity  - how fast new outlets are picking it up (acceleration of breadth).
-  3. Attention - a views/engagement proxy where feeds expose it, else breadth.
-  4. Impact    - market-moving keyword weight (Fed/CPI/OPEC/war/crash ...).
-  5. Recency   - exponential decay so old stories fade from the top.
+  1. Breadth      - how many distinct outlets carry it (tier-weighted).
+  2. News velocity - how fast new outlets pick it up.
+  3. Social        - REAL real-time attention: StockTwits message velocity +
+                     Reddit mention velocity + Google Trends interest on the
+                     event's instruments (replaces any fake "views" proxy).
+  4. Impact        - market-moving keyword weight (Fed/CPI/OPEC/war/crash...).
+  5. Recency       - exponential decay so old stories fade.
 
-Final score is squashed to a 0-100 scale for an at-a-glance trending board.
+and then applies the conviction multiplier that gives the real edge:
+
+  * Market confirmation - when the related futures contract shows an actual
+    price move on a volume spike, the score is boosted; a story the market is
+    ignoring is dampened.
+
+Final score is squashed to 0-100.
 """
 
 from __future__ import annotations
@@ -17,22 +25,25 @@ from __future__ import annotations
 import math
 import time
 
+from .market import InstrumentSignal, MarketContext
 from .models import Event
 from .sources import INSTRUMENTS, MARKET_IMPACT_TERMS
 
-# --- tunable weights -----------------------------------------------------
-W_BREADTH = 0.34
-W_VELOCITY = 0.26
-W_ATTENTION = 0.16
-W_IMPACT = 0.24
+# --- base weights (news + social attention + impact) ---
+W_BREADTH = 0.28
+W_VELOCITY = 0.22
+W_SOCIAL = 0.28
+W_IMPACT = 0.22
 
-RECENCY_HALF_LIFE_MIN = 90.0     # a story loses half its score every 90 min
-VELOCITY_WINDOW_MIN = 20.0       # window for measuring outlet pickup rate
-TIER_WEIGHT = {1: 1.6, 2: 1.0, 3: 0.6}   # a wire pickup counts more than an aggregator
+# how strongly an actual market reaction multiplies the score
+CONFIRMATION_BOOST = 0.7
+
+RECENCY_HALF_LIFE_MIN = 90.0
+VELOCITY_WINDOW_MIN = 20.0
+TIER_WEIGHT = {1: 1.6, 2: 1.0, 3: 0.6}
 
 
 def _tier_weighted_breadth(event: Event) -> float:
-    """Distinct outlets, weighted so wires count more than aggregators."""
     by_outlet_best_tier: dict[str, int] = {}
     for art in event.articles:
         cur = by_outlet_best_tier.get(art.outlet)
@@ -41,12 +52,7 @@ def _tier_weighted_breadth(event: Event) -> float:
     return sum(TIER_WEIGHT.get(t, 1.0) for t in by_outlet_best_tier.values())
 
 
-def _velocity(event: Event, now: float) -> float:
-    """Outlet pickup rate over the recent window (new outlets per minute).
-
-    Uses the recorded outlet-count history. A story that jumped from 1 to 6
-    outlets in the last 20 minutes is accelerating and scores high here.
-    """
+def _news_velocity(event: Event, now: float) -> float:
     if len(event.outlet_history) < 2:
         return 0.0
     window_start = now - VELOCITY_WINDOW_MIN * 60.0
@@ -56,28 +62,17 @@ def _velocity(event: Event, now: float) -> float:
             past_count = count
         else:
             break
-    current_count = event.outlet_history[-1][1]
-    gained = max(0, current_count - past_count)
-    return gained / VELOCITY_WINDOW_MIN  # outlets per minute
-
-
-def _attention_proxy(event: Event) -> float:
-    """Engagement proxy: real views if present, else breadth+volume stand-in."""
-    if event.total_views > 0:
-        return math.log10(1 + event.total_views)
-    # No view data: approximate attention from coverage volume. More outlets and
-    # more repeat-articles imply more eyeballs on the story.
-    return math.log2(1 + event.article_count + event.outlet_count)
+    gained = max(0, event.outlet_history[-1][1] - past_count)
+    return gained / VELOCITY_WINDOW_MIN
 
 
 def _market_impact(event: Event) -> float:
-    """Weight by presence of high-impact market-moving terms (0..~1.0)."""
     text = " ".join(a.text.lower() for a in event.articles)
     score = 0.0
     for term, weight in MARKET_IMPACT_TERMS.items():
         if term in text:
-            score = max(score, weight)          # strongest single signal
-            score += weight * 0.15               # plus a small stacking bonus
+            score = max(score, weight)
+            score += weight * 0.15
     return min(score, 1.5)
 
 
@@ -87,7 +82,6 @@ def _recency(event: Event, now: float) -> float:
 
 
 def _instruments(event: Event) -> list[str]:
-    """Tag the futures contracts the story is relevant to."""
     text = " ".join(a.text.lower() for a in event.articles)
     hits: list[tuple[str, int]] = []
     for symbol, meta in INSTRUMENTS.items():
@@ -98,53 +92,97 @@ def _instruments(event: Event) -> list[str]:
     return [s for s, _ in hits]
 
 
-def score_event(event: Event, now: float | None = None) -> None:
-    """Compute and attach the trending score (0-100) and its breakdown."""
+def _social_score(sig: InstrumentSignal) -> float:
+    """Real-time attention for one instrument, 0..~1.3."""
+    s = (
+        0.5 * math.tanh(sig.social_velocity / 2.0)
+        + 0.3 * math.tanh(sig.reddit_velocity / 0.3)
+        + 0.2 * (sig.trends_interest / 100.0)
+    )
+    if sig.is_trending:
+        s += 0.3
+    return s
+
+
+def _confirmation_score(sig: InstrumentSignal) -> float:
+    """Market reaction for one instrument, 0..1."""
+    if not sig.price_ok:
+        return 0.0
+    move = math.tanh(abs(sig.price_pct) / 0.8)
+    vol = math.tanh(max(0.0, sig.volume_spike - 1.0) / 1.0)
+    return 0.6 * move + 0.4 * vol
+
+
+def _aggregate(event: Event, context: MarketContext) -> tuple[float, float, dict]:
+    """Aggregate social + confirmation over the event's instruments (max-driven)."""
+    best_social = 0.0
+    best_conf = 0.0
+    detail: dict = {}
+    for sym in event.instruments:
+        sig = context.signal(sym)
+        if not sig:
+            continue
+        soc = _social_score(sig)
+        conf = _confirmation_score(sig)
+        best_social = max(best_social, soc)
+        best_conf = max(best_conf, conf)
+        if soc > 0 or conf > 0 or sig.price_ok:
+            detail[sym] = {
+                "social": round(soc, 3),
+                "confirmation": round(conf, 3),
+                "price_pct": sig.price_pct,
+                "volume_spike": sig.volume_spike,
+                "social_velocity": sig.social_velocity,
+                "reddit_velocity": sig.reddit_velocity,
+                "trends": sig.trends_interest,
+                "sentiment": sig.sentiment,
+                "trending": sig.is_trending,
+            }
+    return min(best_social, 1.0), min(best_conf, 1.0), detail
+
+
+def score_event(event: Event, context: MarketContext, now: float | None = None) -> None:
     now = now or time.time()
 
-    breadth_raw = _tier_weighted_breadth(event)
-    velocity_raw = _velocity(event, now)
-    attention_raw = _attention_proxy(event)
+    event.instruments = _instruments(event)
     impact = _market_impact(event)
-    recency = _recency(event, now)
 
-    # Normalise each signal to roughly 0..1 with diminishing returns so a
-    # mega-story doesn't drown everything else.
-    breadth_n = math.tanh(breadth_raw / 6.0)
-    velocity_n = math.tanh(velocity_raw / 0.5)          # 0.5 new outlets/min -> strong
-    attention_n = math.tanh(attention_raw / 4.0)
+    breadth_n = math.tanh(_tier_weighted_breadth(event) / 6.0)
+    velocity_n = math.tanh(_news_velocity(event, now) / 0.5)
     impact_n = min(impact, 1.0)
+    recency = _recency(event, now)
+    social_n, confirmation_n, market_detail = _aggregate(event, context)
 
     base = (
         W_BREADTH * breadth_n
         + W_VELOCITY * velocity_n
-        + W_ATTENTION * attention_n
+        + W_SOCIAL * social_n
         + W_IMPACT * impact_n
     )
-    # market impact also acts as a mild multiplier: a story about the Fed with
-    # broad coverage should clearly outrank an equally-covered fluff piece.
-    multiplier = 1.0 + 0.5 * impact_n
-    score = 100.0 * base * multiplier * recency
+    # market confirmation is the conviction multiplier (the real edge);
+    # impact gives a smaller secondary multiplier.
+    multiplier = (1.0 + CONFIRMATION_BOOST * confirmation_n) * (1.0 + 0.4 * impact_n)
+    score = 100.0 * base * recency * multiplier
 
-    event.instruments = _instruments(event)
     event.market_impact = round(impact, 3)
     event.score = round(min(score, 100.0), 2)
     event.score_breakdown = {
         "breadth": round(breadth_n, 3),
-        "velocity": round(velocity_n, 3),
-        "attention": round(attention_n, 3),
+        "news_velocity": round(velocity_n, 3),
+        "social": round(social_n, 3),
         "impact": round(impact_n, 3),
+        "confirmation": round(confirmation_n, 3),
         "recency": round(recency, 3),
         "outlets": event.outlet_count,
         "articles": event.article_count,
-        "outlets_per_min": round(velocity_raw, 3),
-        "views": event.total_views or None,
         "top_tier": event.max_tier_rank,
+        "market": market_detail,
     }
 
 
-def score_all(events: list[Event], now: float | None = None) -> list[Event]:
+def score_all(events: list[Event], context: MarketContext | None = None, now: float | None = None) -> list[Event]:
     now = now or time.time()
+    context = context or MarketContext()
     for ev in events:
-        score_event(ev, now)
+        score_event(ev, context, now)
     return sorted(events, key=lambda e: e.score, reverse=True)

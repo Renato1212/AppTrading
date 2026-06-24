@@ -92,6 +92,34 @@ INSTRUMENTS: dict[str, dict] = {
 }
 
 
+# Maps each futures contract to the symbols used by the real-time signal
+# sources, so we can measure live attention and price reaction per instrument:
+#   yahoo      - Yahoo Finance symbol for price/volume candles (the futures contract)
+#   stocktwits - liquid, heavily-followed proxy ticker(s) for StockTwits message volume
+#   trends     - search phrase for Google Trends interest
+#   cashtags   - $-tickers / terms to count as mentions on Reddit & StockTwits
+INSTRUMENT_MARKETS: dict[str, dict] = {
+    "ES":  {"yahoo": "ES=F", "stocktwits": "SPY", "trends": "S&P 500", "cashtags": ["SPY", "SPX", "ES_F"]},
+    "NQ":  {"yahoo": "NQ=F", "stocktwits": "QQQ", "trends": "Nasdaq 100", "cashtags": ["QQQ", "NDX", "NQ_F"]},
+    "YM":  {"yahoo": "YM=F", "stocktwits": "DIA", "trends": "Dow Jones", "cashtags": ["DIA", "YM_F"]},
+    "RTY": {"yahoo": "RTY=F", "stocktwits": "IWM", "trends": "Russell 2000", "cashtags": ["IWM", "RTY_F"]},
+    "CL":  {"yahoo": "CL=F", "stocktwits": "USO", "trends": "crude oil price", "cashtags": ["USO", "CL_F", "OIL"]},
+    "NG":  {"yahoo": "NG=F", "stocktwits": "UNG", "trends": "natural gas price", "cashtags": ["UNG", "NG_F"]},
+    "GC":  {"yahoo": "GC=F", "stocktwits": "GLD", "trends": "gold price", "cashtags": ["GLD", "GC_F", "GOLD"]},
+    "SI":  {"yahoo": "SI=F", "stocktwits": "SLV", "trends": "silver price", "cashtags": ["SLV", "SI_F"]},
+    "HG":  {"yahoo": "HG=F", "stocktwits": "CPER", "trends": "copper price", "cashtags": ["CPER", "HG_F"]},
+    "ZC":  {"yahoo": "ZC=F", "stocktwits": "CORN", "trends": "corn price", "cashtags": ["CORN", "ZC_F"]},
+    "ZW":  {"yahoo": "ZW=F", "stocktwits": "WEAT", "trends": "wheat price", "cashtags": ["WEAT", "ZW_F"]},
+    "ZS":  {"yahoo": "ZS=F", "stocktwits": "SOYB", "trends": "soybean price", "cashtags": ["SOYB", "ZS_F"]},
+    "ZN":  {"yahoo": "ZN=F", "stocktwits": "IEF", "trends": "treasury yields", "cashtags": ["IEF", "TNX", "ZN_F"]},
+    "ZB":  {"yahoo": "ZB=F", "stocktwits": "TLT", "trends": "30 year treasury", "cashtags": ["TLT", "ZB_F"]},
+    "6E":  {"yahoo": "EURUSD=X", "stocktwits": "FXE", "trends": "euro dollar", "cashtags": ["FXE", "EURUSD"]},
+    "6J":  {"yahoo": "JPY=X", "stocktwits": "FXY", "trends": "japanese yen", "cashtags": ["FXY", "USDJPY"]},
+    "DX":  {"yahoo": "DX-Y.NYB", "stocktwits": "UUP", "trends": "dollar index", "cashtags": ["UUP", "DXY"]},
+    "BTC": {"yahoo": "BTC-USD", "stocktwits": "BTC.X", "trends": "bitcoin price", "cashtags": ["BTC", "BTCUSD", "COIN"]},
+}
+
+
 # High-impact market-moving terms. Stories containing these get a market-impact
 # multiplier because they tend to actually move futures. Weighted by severity.
 MARKET_IMPACT_TERMS: dict[str, float] = {

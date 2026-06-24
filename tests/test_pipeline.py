@@ -5,6 +5,7 @@ import time
 from scanner.clustering import EventClusterer
 from scanner.entities import entity_overlap, extract_entities
 from scanner.sample import sample_articles
+from scanner.sample import sample_market_context
 from scanner.scoring import score_all
 
 
@@ -44,7 +45,7 @@ def test_clustering_merges_same_story_across_outlets():
 def test_scoring_ranks_broad_high_impact_first():
     clusterer = EventClusterer()
     clusterer.add_articles(sample_articles())
-    ranked = score_all(list(clusterer.events.values()), time.time())
+    ranked = score_all(list(clusterer.events.values()), sample_market_context(), time.time())
 
     assert ranked[0].score >= ranked[-1].score
     # The broadly-covered, high-impact Fed story should top the board.
@@ -57,7 +58,7 @@ def test_scoring_ranks_broad_high_impact_first():
 def test_instrument_tagging():
     clusterer = EventClusterer()
     clusterer.add_articles(sample_articles())
-    score_all(list(clusterer.events.values()), time.time())
+    score_all(list(clusterer.events.values()), sample_market_context(), time.time())
     oil = [e for e in clusterer.events.values() if "oil" in e.headline.lower()]
     assert oil and "CL" in oil[0].instruments
 

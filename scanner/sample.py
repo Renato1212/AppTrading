@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import time
 
+from .market import InstrumentSignal, MarketContext
 from .models import Article
 
 
@@ -71,3 +72,33 @@ def sample_articles(now: float | None = None) -> list[Article]:
             "Corn and wheat grain prices fell on improved crop conditions.",
             "Investing.com", 3, 90),
     ]
+
+
+def sample_market_context() -> MarketContext:
+    """Synthetic real-time signals for offline demo of the full scored board.
+
+    Models a Fed day: equity-index + rates contracts are buzzing on StockTwits,
+    trending, and moving on a volume spike (strong market confirmation); oil has
+    moderate buzz; quieter names show little reaction.
+    """
+    ctx = MarketContext(trending_symbols=["SPY", "QQQ", "TLT"], fetched_ts=time.time())
+
+    def sig(symbol, sv, rv, trends, trending, pct, vspike, last, sent=0.0):
+        return InstrumentSignal(
+            symbol=symbol, social_velocity=sv, social_watchers=0, sentiment=sent,
+            reddit_velocity=rv, reddit_engagement=int(rv * 1000), trends_interest=trends,
+            is_trending=trending, price_pct=pct, volume_spike=vspike, last_price=last,
+            price_ok=True,
+        )
+
+    ctx.by_symbol = {
+        "ES":  sig("ES", 4.2, 0.42, 88, True, 0.95, 2.6, 5512.5, sent=0.45),
+        "NQ":  sig("NQ", 3.6, 0.31, 80, True, 1.20, 2.4, 19550.0, sent=0.40),
+        "ZN":  sig("ZN", 1.1, 0.10, 55, True, 0.55, 1.9, 110.4, sent=0.20),
+        "CL":  sig("CL", 1.8, 0.18, 60, False, 1.7, 2.1, 78.9, sent=0.10),
+        "BTC": sig("BTC", 2.4, 0.22, 70, False, 0.6, 1.3, 81250.0, sent=0.30),
+        "GC":  sig("GC", 0.5, 0.04, 30, False, 0.2, 1.05, 2410.0, sent=0.05),
+        "ZC":  sig("ZC", 0.1, 0.01, 12, False, -0.3, 0.9, 4.15, sent=-0.10),
+        "DX":  sig("DX", 0.3, 0.02, 20, False, -0.4, 1.1, 104.2, sent=-0.05),
+    }
+    return ctx

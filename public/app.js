@@ -20,6 +20,16 @@ function barRow(label, value, cls) {
     <div class="track"><div class="fill" style="width:${pct}%"></div></div></div>`;
 }
 
+// pick the strongest-reacting instrument's market detail for the badge
+function topMarket(b) {
+  const m = b.market || {};
+  let best = null;
+  for (const [sym, d] of Object.entries(m)) {
+    if (!best || (d.confirmation || 0) > (best.d.confirmation || 0)) best = { sym, d };
+  }
+  return best;
+}
+
 function card(ev) {
   const b = ev.breakdown || {};
   const tc = tierClass(ev.score);
@@ -29,11 +39,23 @@ function card(ev) {
   const syms = ev.instruments.slice(0, 4)
     .map(i => `<span class="tag sym" title="${i.name}">${i.symbol}</span>`).join("");
 
-  const velo = (b.outlets_per_min || 0) > 0
-    ? `<span class="tag velo">▲ ${b.outlets_per_min}/min pickup</span>` : "";
+  const velo = (b.news_velocity || 0) > 0.05
+    ? `<span class="tag velo">▲ ${ev.outlet_count} outlets, rising</span>` : "";
+  const social = (b.social || 0) > 0.05
+    ? `<span class="tag social">💬 attention ${(b.social * 100).toFixed(0)}</span>` : "";
   const impact = ev.market_impact > 0
     ? `<span class="tag impact">⚡ impact ${ev.market_impact.toFixed(2)}</span>` : "";
-  const views = b.views ? `<span class="tag">👁 ${b.views.toLocaleString()} views</span>` : "";
+
+  // market confirmation badge: actual price move + volume spike in the contract
+  const mk = topMarket(b);
+  let confTag = "";
+  if (mk && (mk.d.confirmation || 0) > 0.05) {
+    const up = mk.d.price_pct >= 0;
+    confTag = `<span class="tag conf ${up ? "up" : "down"}" title="${mk.sym} reaction · vol ${mk.d.volume_spike}×">`
+      + `${up ? "▲" : "▼"} ${mk.sym} ${mk.d.price_pct > 0 ? "+" : ""}${mk.d.price_pct}% `
+      + `· vol ${mk.d.volume_spike}×</span>`;
+  }
+  const trending = mk && mk.d.trending ? `<span class="tag fire">🔥 trending</span>` : "";
 
   const top = ev.articles[0] || {};
   const outletPills = ev.outlets.slice(0, 6).map(o => `<span>${o}</span>`).join("");
@@ -48,15 +70,15 @@ function card(ev) {
       <div class="meta">
         ${syms}
         <span class="tag outlets">📰 ${ev.outlet_count} outlet${ev.outlet_count > 1 ? "s" : ""}</span>
-        <span class="tag">${ev.article_count} articles</span>
-        ${velo}${impact}${views}
+        ${confTag}${trending}${social}${velo}${impact}
         <span class="tag">${fmtAge(ev.age_minutes)}</span>
       </div>
       <div class="outlet-pills">${outletPills}</div>
     </div>
     <div class="bars">
-      ${barRow("breadth", b.breadth || 0, "b-breadth")}
-      ${barRow("velocity", b.velocity || 0, "b-velocity")}
+      ${barRow("outlets", b.breadth || 0, "b-breadth")}
+      ${barRow("social", b.social || 0, "b-social")}
+      ${barRow("confirm", b.confirmation || 0, "b-confirm")}
       ${barRow("impact", b.impact || 0, "b-impact")}
     </div>
   </div>`;

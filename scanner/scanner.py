@@ -7,6 +7,7 @@ import time
 
 from .clustering import EventClusterer
 from .fetcher import fetch_all
+from .market import build_market_context
 from .models import Event
 from .scoring import score_all
 
@@ -27,14 +28,16 @@ class NewsScanner:
     async def scan_once(self) -> list[Event]:
         """Run a single fetch/cluster/score pass and refresh the board."""
         if self.demo:
-            from .sample import sample_articles
+            from .sample import sample_articles, sample_market_context
             articles = sample_articles()
+            context = sample_market_context()
         else:
             articles = await fetch_all()
+            context = await build_market_context()
         async with self._lock:
             self.clusterer.add_articles(articles)
             now = time.time()
-            self._ranked = score_all(list(self.clusterer.events.values()), now)
+            self._ranked = score_all(list(self.clusterer.events.values()), context, now)
             self.last_scan_ts = now
             self.scan_count += 1
         return self._ranked
